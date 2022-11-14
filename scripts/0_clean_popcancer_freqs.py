@@ -11,16 +11,16 @@ output_file = snakemake.output[0]
 
 
 
-def add_pop_cancer (df, pop_cancer = pd.read_csv(snakemake.input[1], sep = '\t', header = 0)):
+def add_pop_cancer (df, pop_cancer = pd.read_csv('/home/amaqueda/adrian_TFM/barcode_study_ancestry.tsv', sep = '\t', header = 0)):
 
     """
     Function used to add the populations and cancer type columns to the dataframe.
 
     Parameters:
     df: dataframe with information of variants.
-    pop_cancer: dataframe
+    pop_cancer: dataframe with information for ancestry and cancer for each patient
     """
-
+    
     ind_list = list(pop_cancer['TCGA.Barcode'])
     pop_list = list(pop_cancer['TCGA.Ancestry'])
     cancer_list = list(pop_cancer['TCGA.Study.Cancer'])
@@ -30,15 +30,9 @@ def add_pop_cancer (df, pop_cancer = pd.read_csv(snakemake.input[1], sep = '\t',
         dict[ind] = [pop_list[ind_list.index(ind)], cancer_list[ind_list.index(ind)]]
 
     ind_list_var = list(df['INDIVIDUAL'])
-    pop_list_var = []
-    cancer_list_var = []
-    
-    for ind in ind_list_var:
-        pop_list_var.append(dict[ind][0])
-        cancer_list_var.append(dict[ind][1])
 
-    df['POPULATION'] = pop_list_var
-    df['CANCER'] = cancer_list_var
+    df['POPULATION'] = [dict[ind][0] for ind in ind_list_var]
+    df['CANCER'] = [dict[ind][1] for ind in ind_list_var]
 
     return df
 
