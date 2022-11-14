@@ -1,38 +1,60 @@
 import pandas as pd
 import numpy as np
 
-basedir = '/home/amaqueda/adrian_TFM'
-
-filedir = basedir + '/00_TCGA_annotated_vars_toy_example'
-
-input_file = filedir + '/germline.TCGAqc_filt.GQ.DP.VAF.AD.BCD.PASS.header.clean.popcancer.freqs.rare_0.001.chr21.tsv'
-output_file = filedir + '/germline.TCGAqc_filt.GQ.DP.VAF.AD.BCD.PASS.header.clean.popcancer.freqs.rare_0.001.'
 
 
 
+# Defining parameters
+input_file = snakemake.input[0]
+output_file = snakemake.output[0]
 
-def filter_pathogenic_variants(df):
+
+
+
+def filter_pathogenic_variants_DelMis(df):
 
     """
-    Function to filter rare pathogenic variants according to two criteria (deleterious missense variants and clinvar).
-    To select deleterious variants we use MetaLR predictor.
+    Function to filter rare pathogenic variants according to DelMis criteria (deleterious missense variants). We use MetaLR predictor.
 
     Parameters:
     df: dataframe with information of variants.
     """
 
-    df[['Ref', 'Alt']] = df[['Ref', 'Alt']].fillna('-')
-
     #Filter missense variants first, then deleterious missense ones.
-    mis_variants = df[(df['Consequence'] == 'missense_variant') | (df['Consequence'] == 'missense_variant,splice_region_variant')]
+    mis_variants = df[(df['Consequence'] == 'missense_variant') | (df['Consequence'] == 'missense_variant,splice_region_variant') | (df['Consequence'] == 'missense_variant,NMD_transcript_variant')]
 
     del_mis_variants = mis_variants[mis_variants['MetaLR_pred'] == 'D']
-
-    #Filter pathogenic variants acordint to ClinVar.
-    clin_variants = df[(df['CLIN_SIG'] == 'pathogenic') | (df['CLIN_SIG'] == 'pathogenic/likely_pathogenic') | 
-                   (df['CLIN_SIG'] == 'risk_factor') | (df['CLIN_SIG'] == 'likely_pathogenic_risk_factor')]
     
-    return del_mis_variants, clin_variants
+    return del_mis_variants
+
+
+
+
+def filter_pathogenic_variants_ClinVar(df,
+            patho_list_in = ['risk_factor','pathogenic','likely_pathogenic','likely_pathogenic_risk_factor', 'pathogenic/likely_pathogenic', '_risk_factor'],
+            patho_list_out = ['conflicting_interpretations_of_pathogenicity', 'uncertain_significance','not_provided', 'benign', 'likely_benign']):
+
+    """
+    Function to filter rare pathogenic variants according to ClinVar criteria (clinvar significance variants).
+
+    Parameters:
+    df: dataframe with information of variants.
+    path_list: criteria to filter pathogenic variants.
+    """
+
+    # Filter variants which have at least one of the ClinSig tags in "patho_list_in"
+    picklist = []
+    for index, row in df.iterrows():
+        picklist.append(any(x in patho_list_in for x in str(row['CLIN_SIG']).split(',')))
+    df = df.loc[picklist]
+
+    # Filter out variants which have at least one of the ClinSig tags in "patho_list_out"
+    picklist = []
+    for index, row in df.iterrows():
+        picklist.append(not any(x in patho_list_out for x in str(row['CLIN_SIG']).split(','))) 
+    clin_variants = df.loc[picklist]
+    
+    return clin_variants
 
 
 
@@ -41,10 +63,14 @@ def filter_pathogenic_variants(df):
 df = pd.read_csv(input_file, sep = '\t', header = 0)
 
 
-# Filter pathogenic variants according to ClinVar and DelMis criteria
-DelMis_variants, ClinVar_variants = filter_pathogenic_variants(df)
+
+# Filter pathogenic variants according to DelMis criteria
+if 'DelMis' in output_file:
+    DelMis_variants = filter_pathogenic_variants_DelMis(df)
+    DelMis_variants.to_csv(path_or_buf = output_file, sep = '\t', index = False)
 
 
-# Save dataframes
-DelMis_variants.to_csv(path_or_buf = output_file + 'DelMis.chr21.tsv', sep = '\t', index = False)
-ClinVar_variants.to_csv(path_or_buf = output_file + 'ClinVar.chr21.tsv', sep = '\t', index = False)
+# Filter pathogenic variants according to ClinVar criteria
+if 'ClinVar' in output_file:
+    ClinVar_variants = filter_pathogenic_variants_ClinVar(df)
+    ClinVar_variants.to_csv(path_or_buf = output_file, sep = '\t', index = False)

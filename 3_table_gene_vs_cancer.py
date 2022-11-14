@@ -1,58 +1,83 @@
 import pandas as pd
 import numpy as np
 
-basedir = '/home/amaqueda/adrian_TFM'
-
-filedir = basedir + '/00_TCGA_annotated_vars_toy_example'
-
-input_file = filedir + '/germline.TCGAqc_filt.GQ.DP.VAF.AD.BCD.PASS.header.clean.popcancer.freqs.rare_0.001.'
-output_file = filedir + '/germline.TCGAqc_filt.GQ.DP.VAF.AD.BCD.PASS.header.clean.popcancer.freqs.rare_0.001.'
 
 
 
+# Defining parameters
+input_file = snakemake.input[0]
+output_file = snakemake.output[0]
 
-def gene_vs_cancer_frequency(df_delmis, df_clinvar, TCGA_study_size):
+
+
+
+def gene_vs_cancer_frequency_DelMis(df, TCGA_study_size):
     
     """
-    Function to get the frequencies of individuals who have pathogenic variants per gene and cancer type.
+    Function to get the frequencies of rare pathogenic variants according to DelMis criteria per gene and cancer type.
 
     Parameters:
-    df_delmis: dataframe with rare pathogenic variants according to deleterious missense criteria.
-    df_clinvar: dataframe with rare pathogenic variants according to clinvar criteria.
-    TCGA_study_size:
+    df: dataframe with rare pathogenic variants.
+    TCGA_study_size: dataframe with the number of individuals per cancer type, including pancancer.
     """
 
-    # DelMis frequency calculation
-    DelMis_unique = df_delmis[['INDIVIDUAL', 'SYMBOL', 'CANCER']].value_counts().reset_index(name = 'count')[['SYMBOL', 'CANCER']].value_counts().reset_index(name = 'count')
-    DelMis_count = pd.pivot_table(DelMis_unique, index = 'SYMBOL', columns = 'CANCER', values = 'count', fill_value = 0)
-    DelMis_count.insert(0, 'PANCANCER', DelMis_count.sum(axis = 1))
+    DelMis_unique = df[['INDIVIDUAL', 'SYMBOL', 'CANCER']].value_counts().reset_index(name = 'vars_per_ind')[['SYMBOL', 'CANCER']].value_counts().reset_index(name = 'n_inds')
+    DelMis_count = pd.pivot_table(DelMis_unique, index = 'SYMBOL', columns = 'CANCER', values = 'n_inds', fill_value = 0)
+
+    for i in TCGA_study_size.index:
+        if i not in DelMis_count.columns:
+            DelMis_count[i] = [0] * DelMis_count.shape[0]
+
+
+    DelMis_count['PANCANCER'] = DelMis_count.sum(axis = 1)
 
     for i in DelMis_count.columns:
         DelMis_count[i] = DelMis_count[i] / int(TCGA_study_size.loc[i])
+    
+    return DelMis_count
 
-    # ClinVar frequency calculation
-    ClinVar_unique = df_clinvar[['INDIVIDUAL', 'SYMBOL', 'CANCER']].value_counts().reset_index(name = 'count')[['SYMBOL', 'CANCER']].value_counts().reset_index(name = 'count')
-    ClinVar_count = pd.pivot_table(ClinVar_unique, index = 'SYMBOL', columns = 'CANCER', values = 'count', fill_value = 0)
-    ClinVar_count.insert(0, 'PANCANCER', ClinVar_count.sum(axis = 1))
+
+
+
+def gene_vs_cancer_frequency_ClinVar(df, TCGA_study_size):
+    
+    """
+    Function to get the frequencies of rare pathogenic variants according to ClinVar criteria per gene and cancer type.
+
+    Parameters:
+    df: dataframe with rare pathogenic variants.
+    TCGA_study_size: dataframe with the number of individuals per cancer type, including pancancer.
+    """
+
+    ClinVar_unique = df[['INDIVIDUAL', 'SYMBOL', 'CANCER']].value_counts().reset_index(name = 'vars_per_ind')[['SYMBOL', 'CANCER']].value_counts().reset_index(name = 'n_inds')
+    ClinVar_count = pd.pivot_table(ClinVar_unique, index = 'SYMBOL', columns = 'CANCER', values = 'n_inds', fill_value = 0)
+
+    for i in TCGA_study_size.index:
+        if i not in ClinVar_count.columns:
+            ClinVar_count[i] = [0] * ClinVar_count.shape[0]
+
+
+    ClinVar_count['PANCANCER'] = ClinVar_count.sum(axis = 1)
 
     for i in ClinVar_count.columns:
         ClinVar_count[i] = ClinVar_count[i] / int(TCGA_study_size.loc[i])
     
-    return DelMis_count, ClinVar_count
+    return ClinVar_count
 
 
 
 
 # Load dataframes
-DelMis_variants = pd.read_csv(input_file + 'DelMis.chr21.tsv', sep = '\t', header = 0)
-ClinVar_variants = pd.read_csv(input_file + 'ClinVar.chr21.tsv', sep = '\t', header = 0)
-TCGA_study_size = pd.read_csv(basedir + '/TCGA_cancer_count.tsv', sep = '\t', header = 0, index_col = 0)
+df = pd.read_csv(input_file, sep = '\t', header = 0)
+TCGA_study_size = pd.read_csv(snakemake.input[1], sep = '\t', header = 0, index_col = 0)
+
+# Calculate DelMis variants frequencies in cancer
+if 'DelMis' in input_file:
+    DelMis_freq = gene_vs_cancer_frequency_DelMis(df, TCGA_study_size)
+    DelMis_freq.to_csv(path_or_buf = output_file, sep = '\t', index = True)
 
 
-# Calculate frequencies
-DelMis_freq, ClinVar_freq = gene_vs_cancer_frequency(DelMis_variants, ClinVar_variants, TCGA_study_size)
-
-
-# Save dataframes
-DelMis_freq.to_csv(path_or_buf = output_file + 'DelMis.frequencies.chr21.tsv', sep = '\t', index = True)
-ClinVar_freq.to_csv(path_or_buf = output_file + 'ClinVar.frequencies.chr21.tsv', sep = '\t', index = True)
+# Calculate ClinVar variants frequencies in cancer
+if 'ClinVar' in input_file:
+    ClinVar_freq = gene_vs_cancer_frequency_ClinVar(df, TCGA_study_size)
+    ClinVar_freq.to_csv(path_or_buf = output_file, sep = '\t', index = True)
