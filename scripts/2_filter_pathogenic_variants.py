@@ -5,9 +5,9 @@ import numpy as np
 
 
 # Defining parameters
-input_file = snakemake.input[0]
-output_file = snakemake.output[0]
-
+input_file = snakemake.input["input"]
+output_file = snakemake.output["output"]
+vars_filtered_out = snakemake.output["vars_filtered_log"]
 
 
 
@@ -61,16 +61,30 @@ def filter_pathogenic_variants_ClinVar(df,
 
 # Load dataframe
 df = pd.read_csv(input_file, sep = '\t', header = 0)
-
+max_vars = df.shape[0]
 
 
 # Filter pathogenic variants according to DelMis criteria
 if 'DelMis' in output_file:
     DelMis_variants = filter_pathogenic_variants_DelMis(df)
     DelMis_variants.to_csv(path_or_buf = output_file, sep = '\t', index = False)
+    
+    DelMis_vars = DelMis_variants.shape[0]
+    new_row = {'Filter_ID':['DelMis'],
+            'Input':[max_vars],
+            'Output':[DelMis_vars]}
+    DelMis_log = pd.DataFrame(data = new_row)
+    DelMis_log.to_csv(path_or_buf = vars_filtered_out, sep = '\t', index = False)
 
 
 # Filter pathogenic variants according to ClinVar criteria
 if 'ClinVar' in output_file:
     ClinVar_variants = filter_pathogenic_variants_ClinVar(df)
     ClinVar_variants.to_csv(path_or_buf = output_file, sep = '\t', index = False)
+    
+    ClinVar_vars = ClinVar_variants.shape[0]
+    new_row = {'Filter_ID':['ClinVar'],
+            'Input':[max_vars],
+            'Output':[ClinVar_vars]}
+    ClinVar_log = pd.DataFrame(data = new_row)
+    ClinVar_log.to_csv(path_or_buf = vars_filtered_out, sep = '\t', index = False)

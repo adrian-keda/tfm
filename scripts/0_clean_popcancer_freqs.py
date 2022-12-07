@@ -5,13 +5,17 @@ import numpy as np
 
 
 # Defining parameters
-input_file = snakemake.input[0]
-output_file = snakemake.output[0]
+input_file = snakemake.input["input"]
+ancestry = snakemake.input["ancestry"]
+pop_count = snakemake.input["pop_count"]
+
+output_file = snakemake.output["output"]
+vars_filtered_log = snakemake.output["vars_filtered_log"]
 
 
 
 
-def add_pop_cancer (df, pop_cancer = pd.read_csv('/home/amaqueda/adrian_TFM/barcode_study_ancestry.tsv', sep = '\t', header = 0)):
+def add_pop_cancer (df, pop_cancer = pd.read_csv(ancestry, sep = '\t', header = 0)):
 
     """
     Function used to add the populations and cancer type columns to the dataframe.
@@ -39,7 +43,7 @@ def add_pop_cancer (df, pop_cancer = pd.read_csv('/home/amaqueda/adrian_TFM/barc
 
 
 
-def calc_frequencies_pop(df, individual_count = pd.read_csv('/home/amaqueda/adrian_TFM/TCGA_ancestry_count.tsv', sep = '\t', header = 0)):
+def calc_frequencies_pop(df):
 
     """
     Function used to calculate the frequencies of each variant in the desired populations.
@@ -51,7 +55,8 @@ def calc_frequencies_pop(df, individual_count = pd.read_csv('/home/amaqueda/adri
     
     variants = df['Otherinfo3'].unique() # list of variants
     FREQS = []  # list to store frequencies
-    n_individuals = individual_count['count'].sum() # number of individuals in or samples
+    # n_individuals = individual_count['count'].sum() # number of individuals in or samples
+    n_individuals = len(df['INDIVIDUAL'].unique()) # Si veo que todos los chr tienen el mismo número de individuos
 
     a = df[['Otherinfo3', 'GT']].value_counts().reset_index(name='count')
     a['GT'] = [1 if i == '0/1' else 2 for i in a['GT']]
@@ -63,7 +68,7 @@ def calc_frequencies_pop(df, individual_count = pd.read_csv('/home/amaqueda/adri
         
         FREQS.append((n_alleles) / (n_individuals * 2)) # Computing and storing allele frequency
         
-    return variants, FREQS
+    return variants.tolist(), FREQS
 
 
 
@@ -77,9 +82,11 @@ df['INDIVIDUAL'] = [i[0:12] for i in df['SAMPLE']]
 df['SAMPLE_NUM_CODE'] = [i[13:15] for i in df['SAMPLE']]
 
 
-
 # Remove rows dupplicated due to different annotation
-df = df.drop_duplicates(['Otherinfo3', 'INDIVIDUAL', 'SAMPLE_NUM_CODE'], keep='first')
+# Maybe this step can be omitted, due to later filters
+n_original_vars = df.shape[0]
+df = df.drop_duplicates(['Otherinfo3', 'INDIVIDUAL', 'SAMPLE_NUM_CODE'])
+n_vars_after_drop = df.shape[0]
 
 
 # Add POPULATION and CANCER_TYPE columns
@@ -88,7 +95,6 @@ df = add_pop_cancer(df)
 
 # Calculating variants' frequencies
 variants, frequencies = calc_frequencies_pop(df[['Otherinfo3', 'GT', 'INDIVIDUAL', 'POPULATION']])
-variants = variants.tolist()
 
 
 # Creating a dictionary variant : frequency
@@ -102,3 +108,8 @@ df['TCGA_ALL_AF'] = [ dict[variant] for variant in df['Otherinfo3'] ]
 
 # Saving dataframe for future analysis
 df.to_csv(path_or_buf = output_file, sep = '\t', index = False)
+
+# Log file
+data = {'Filter_ID':['dup_removing'], 'Input':[n_original_vars], 'Output':[n_vars_after_drop]}
+log_df = pd.DataFrame(data = data)
+log_df.to_csv(path_or_buf = vars_filtered_log, sep = '\t', index = False)
